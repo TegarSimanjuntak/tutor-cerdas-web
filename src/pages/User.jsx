@@ -48,7 +48,7 @@ export default function User() {
   const [q, setQ] = useState('')
   const [k, setK] = useState(6) // top_k untuk retrieval
   const [answer, setAnswer] = useState('')
-  const [sources, setSources] = useState([]) // [{document_id, chunk_index, similarity, ...}]
+  const [sources, setSources] = useState([]) // [{document_id, chunk_index, similarity, title?, preview?}]
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [peek, setPeek] = useState({}) // key `${docId}:${idx}` -> preview text
@@ -56,6 +56,7 @@ export default function User() {
   const api = useMemo(() => API_BASE, [])
 
   function norm(str=''){ return (str || '').replace(/\s+/g,' ').trim() }
+  function short(s='', n=60){ const t=(s||'').replace(/\s+/g,' ').trim(); return t.length>n? t.slice(0,n)+'…' : t }
 
   async function ask() {
     const question = norm(q)
@@ -106,6 +107,10 @@ export default function User() {
     }
   }
 
+  function clearAll(){
+    setQ(''); setAnswer(''); setSources([]); setError(''); setPeek({})
+  }
+
   return (
     <div className="up-scope">
       <style>{styles}</style>
@@ -132,6 +137,9 @@ export default function User() {
             />
             <button className="up-btn up-btn-primary" onClick={ask} disabled={loading}>
               {loading ? 'Memproses…' : 'Tanya'}
+            </button>
+            <button className="up-btn" onClick={clearAll} disabled={loading}>
+              Clear
             </button>
           </div>
 
@@ -175,16 +183,26 @@ export default function User() {
             <div className="up-src-list">
               {sources.map((s,i)=>{
                 const key = `${s.document_id}:${s.chunk_index}`
+                const title = s.title || short(s.preview || '', 60) || s.document_id
                 return (
                   <div key={key} className="up-src-item">
                     <div className="up-row" style={{ justifyContent:'space-between', alignItems:'flex-start' }}>
                       <div style={{ minWidth:0 }}>
-                        <div style={{ fontWeight:700, marginBottom:4 }}>[{i+1}] Doc: <span className="up-mono">{s.document_id}</span></div>
+                        <div style={{ fontWeight:700, marginBottom:4 }}>
+                          [{i+1}] {title}
+                        </div>
                         <div className="up-muted" style={{ fontSize:12, display:'flex', gap:12, flexWrap:'wrap' }}>
                           <span>chunk: <b>#{s.chunk_index}</b></span>
                           {'similarity' in s && <span>sim: {Number(s.similarity).toFixed(3)}</span>}
-                          <span className="up-chip">id: {key}</span>
+                          <span className="up-chip">{title}</span>
                         </div>
+
+                        {/* snippet dari API kalau ada */}
+                        {s.preview && (
+                          <div className="up-preview" style={{ marginTop:8 }}>
+                            {s.preview}…
+                          </div>
+                        )}
                       </div>
 
                       <div className="up-row" style={{ gap:8 }}>
@@ -194,6 +212,7 @@ export default function User() {
                       </div>
                     </div>
 
+                    {/* jika user klik Lihat Chunk, tampilkan isi chunk penuh */}
                     {peek[key] && (
                       <div className="up-preview">
                         {peek[key]}
