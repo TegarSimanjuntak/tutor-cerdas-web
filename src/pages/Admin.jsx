@@ -153,7 +153,9 @@ export default function Admin() {
     } finally { setRebuildId(null); }
   }
 
+  // Toggle: jika dokumen sama sudah terbuka → tutup; kalau beda → load chunks
   async function viewChunks(id) {
+    if (viewDoc === id) { setViewDoc(null); setChunks([]); return; }
     try {
       setViewDoc(id); setChunks([]);
       const j = await fetchJSON(`/documents/${id}/chunks?limit=200`);
@@ -169,6 +171,18 @@ export default function Admin() {
       setQuickPrev(p => ({ ...p, [id]: txt || "(kosong)" }));
     } catch (e) {
       setQuickPrev(p => ({ ...p, [id]: `(gagal memuat preview: ${e.message})` }));
+    }
+  }
+
+  // Buka PDF di tab baru (pakai signed URL dari API)
+  async function openPDF(id){
+    try{
+      const j = await fetchJSON(`/documents/${id}/url`);
+      const url = j?.url;
+      if (!url) throw new Error('no url');
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }catch(e){
+      alert(`Gagal membuka PDF: ${e.message || e}`);
     }
   }
 
@@ -296,11 +310,17 @@ export default function Admin() {
                     </div>
 
                     <div className="ad-tools">
-                      <button className="ad-btn" onClick={() => quickPreview(x.id)} title="Lihat ringkasan N chunk pertama">
-                        Quick Preview
+                      <button className="ad-btn" onClick={() => openPDF(x.id)} title="Buka PDF di tab baru">
+                        Buka PDF
                       </button>
-                      <button className="ad-btn" onClick={() => viewChunks(x.id)}>
-                        Lihat Chunks
+                      <button className="ad-btn ad-btn-ghost" onClick={() => quickPreview(x.id)} title="Preview teks ringkas (N chunk pertama)">
+                        Preview Teks
+                      </button>
+                      <button className="ad-btn"
+                              onClick={() => viewChunks(x.id)}
+                              aria-pressed={viewDoc === x.id}
+                              title="Lihat/Tutup daftar chunks">
+                        {viewDoc === x.id ? 'Tutup Chunks' : 'Lihat Chunks'}
                       </button>
                       <button className="ad-btn"
                               onClick={() => rebuild(x.id)}
