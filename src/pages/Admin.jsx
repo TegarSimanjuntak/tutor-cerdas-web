@@ -68,7 +68,23 @@ const styles = `
 .ad-chip{ font-size:12px; padding:2px 8px; border-radius:999px; background:var(--soft); border:1px solid var(--line); }
 
 .ad-alert{ background:rgba(239,68,68,.12); color:#b91c1c; border:1px solid rgba(239,68,68,.35); padding:10px; border-radius:12px; }
+
+/* small extras */
+.ad-small{ font-size:12px; color:var(--muted); }
+.ad-pre{ background:var(--soft); border:1px solid var(--line); border-radius:10px; padding:10px; white-space:pre-wrap; max-height:240px; overflow:auto; }
 `;
+
+function formatBytes(bytes){
+  if (!bytes && bytes !== 0) return "-";
+  const units = ["B","KB","MB","GB","TB"];
+  let i = 0, n = Number(bytes);
+  while (n >= 1024 && i < units.length-1){ n /= 1024; i++; }
+  return `${n.toFixed(n < 10 && i>0 ? 1 : 0)} ${units[i]}`;
+}
+function fmtDate(x){
+  if (!x) return "-";
+  try { return new Date(x).toLocaleString(); } catch { return String(x); }
+}
 
 export default function Admin() {
   const [file, setFile] = useState(null);
@@ -76,9 +92,11 @@ export default function Admin() {
   const [items, setItems] = useState([]);
   const [viewDoc, setViewDoc] = useState(null);
   const [chunks, setChunks] = useState([]);
+  const [quickPrev, setQuickPrev] = useState({});   // {docId: text}
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [rebuildId, setRebuildId] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [q, setQ] = useState("");
   const [drag, setDrag] = useState(false);
@@ -143,6 +161,33 @@ export default function Admin() {
     } catch (e) { setErrorMsg(String(e.message || e)); console.error("[Admin] viewChunks:", e); }
   }
 
+  async function quickPreview(id, n=8){
+    try {
+      setQuickPrev(p => ({ ...p, [id]: "...memuat preview..." }));
+      const r = await fetch(`${api}/documents/${id}/preview?n=${n}`);
+      const txt = await r.text();
+      setQuickPrev(p => ({ ...p, [id]: txt || "(kosong)" }));
+    } catch (e) {
+      setQuickPrev(p => ({ ...p, [id]: `(gagal memuat preview: ${e.message})` }));
+    }
+  }
+
+  async function removeDoc(id, title){
+    if (!confirm(`Hapus dokumen ini?\n\n${title || id}`)) return;
+    try{
+      setDeleteId(id); setErrorMsg("");
+      await fetchJSON(`/documents/${id}`, { method: "DELETE" });
+      // bersihkan state preview/chunks jika yang dihapus sedang dibuka
+      setQuickPrev(p => { const n = { ...p }; delete n[id]; return n; });
+      if (viewDoc === id) { setViewDoc(null); setChunks([]); }
+      await refresh();
+    }catch(e){
+      alert(`Gagal hapus: ${e.message || e}`); setErrorMsg(String(e.message || e));
+    }finally{
+      setDeleteId(null);
+    }
+  }
+
   function statusBadge(status) {
     const s = (status || "").toLowerCase();
     if (s === "embedded") return <span className="ad-badge ok">embedded</span>;
@@ -150,6 +195,13 @@ export default function Admin() {
     if (s === "uploaded") return <span className="ad-badge up">uploaded</span>;
     if (s === "error")    return <span className="ad-badge err">error</span>;
     return <span className="ad-badge">{status || "unknown"}</span>;
+  }
+
+  function copy(text){
+    navigator.clipboard?.writeText(text).then(
+      () => alert("Disalin ke clipboard"),
+      () => alert("Gagal menyalin")
+    );
   }
 
   const filtered = useM(() => {
@@ -164,7 +216,9 @@ export default function Admin() {
 
   const onDrop = e => {
     e.preventDefault(); setDrag(false);
-    if (e.dataTransfer.files?.[0]) setFile(e.dataTransfer.files[0]);
+    const f = e.dataTransfer.files?.[0];
+    if (f && f.type === "application/pdf") setFile(f);
+    else if (f) alert("Hanya PDF yang didukung");
   };
 
   return (
@@ -196,7 +250,7 @@ export default function Admin() {
                    onDragLeave={() => setDrag(false)}
                    onDrop={onDrop}>
                 {file
-                  ? <>Dipilih: <b>{file.name}</b></>
+                  ? <>Dipilih: <b>{file.name}</b> <span className="ad-small">({formatBytes(file.size)})</span></>
                   : <>Tarik & letakkan PDF di sini, atau pilih lewat input di atas</>}
               </div>
 
@@ -230,18 +284,22 @@ export default function Admin() {
                 <li key={x.id} className="ad-item">
                   <div className="ad-row" style={{ alignItems: 'flex-start' }}>
                     <div style={{ minWidth: 0 }}>
-                      <div className="ad-title">{x.title || x.storage_path || x.file_path}</div>
+                      <div className="ad-title">{x.title || x.storage_path || x.file_path || "(untitled)"}</div>
                       <div className="ad-meta">
                         <span>ID: <span className="ad-mono">{x.id}</span></span>
+                        <button className="ad-btn ad-btn-ghost" onClick={()=>copy(x.id)}>Copy ID</button>
+                        {"created_at" in x && <span>created: {fmtDate(x.created_at)}</span>}
                         <span>pages: {x.pages ?? "-"}</span>
-                        <span>size: {x.size ? `${x.size} B` : "-"}</span>
+                        <span>size: {x.size ? formatBytes(x.size) : "-"}</span>
                         {statusBadge(x.status)}
                       </div>
                     </div>
 
                     <div className="ad-tools">
-                      <button className="ad-btn"
-                              onClick={() => viewChunks(x.id)}>
+                      <button className="ad-btn" onClick={() => quickPreview(x.id)} title="Lihat ringkasan N chunk pertama">
+                        Quick Preview
+                      </button>
+                      <button className="ad-btn" onClick={() => viewChunks(x.id)}>
                         Lihat Chunks
                       </button>
                       <button className="ad-btn"
@@ -251,9 +309,24 @@ export default function Admin() {
                               title="Extract → Chunk → Embed">
                         {rebuildId === x.id ? "Rebuilding…" : "Rebuild"}
                       </button>
+                      <button className="ad-btn ad-btn-danger"
+                              onClick={() => removeDoc(x.id, x.title || x.storage_path)}
+                              disabled={!!deleteId}
+                              aria-busy={deleteId === x.id}
+                              title="Hapus dokumen & semua chunks">
+                        {deleteId === x.id ? "Menghapus…" : "Hapus"}
+                      </button>
                     </div>
                   </div>
 
+                  {/* Quick preview text */}
+                  {quickPrev[x.id] && (
+                    <div className="ad-pre" style={{ marginTop:10 }}>
+                      {quickPrev[x.id]}
+                    </div>
+                  )}
+
+                  {/* Full chunks */}
                   {viewDoc === x.id && (
                     <div className="ad-chunks">
                       {chunks.length === 0 ? (
@@ -272,6 +345,12 @@ export default function Admin() {
                   )}
                 </li>
               ))}
+
+              {filtered.length === 0 && (
+                <li className="ad-item" style={{ textAlign:'center', color:'var(--muted)' }}>
+                  Tidak ada dokumen.
+                </li>
+              )}
             </ul>
           </div>
         </div>
