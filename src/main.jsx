@@ -1,78 +1,134 @@
-import React, { Suspense } from 'react'
-import ReactDOM from 'react-dom/client'
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
-import App from './App.jsx'
-import { useAuth } from './lib/useAuth'
+// src/main.jsx
+import React, { Suspense } from "react";
+import ReactDOM from "react-dom/client";
+import {
+  createBrowserRouter,
+  RouterProvider,
+  Navigate,
+} from "react-router-dom";
+import App from "./App.jsx";
+import { useAuth } from "./lib/useAuth";
 
-// lazy pages
-const Auth  = React.lazy(() => import('./pages/Auth.jsx'))
-const Admin = React.lazy(() => import('./pages/Admin.jsx'))
-const User  = React.lazy(() => import('./pages/User.jsx'))
+// Lazy load pages
+const Auth = React.lazy(() => import("./pages/Auth.jsx"));
+const Admin = React.lazy(() => import("./pages/Admin.jsx"));
+const User = React.lazy(() => import("./pages/User.jsx"));
 
-function Loading() { return <div style={{padding:24}}>Loading…</div> }
-function ErrorPage({ title='Terjadi kesalahan', detail }) {
-  return <div style={{padding:24}}><h2>{title}</h2><div style={{opacity:.7}}>{detail||'Coba muat ulang.'}</div></div>
+/* =======================
+ *  Helper Components
+ * ======================= */
+function Loading() {
+  return <div style={{ padding: 24 }}>Loading…</div>;
 }
-function NotFound() { return <ErrorPage title="404" detail="Halaman tidak ditemukan." /> }
 
-function HomeRedirect() {
-  const { loading, user, role } = useAuth()
-  if (loading) return <Loading />
-  if (!user)   return <Navigate to="/auth" replace />
-  return <Navigate to={role === 'admin' ? '/admin' : '/user'} replace />
+function ErrorPage({ title = "Terjadi kesalahan", detail }) {
+  return (
+    <div style={{ padding: 24 }}>
+      <h2>{title}</h2>
+      <div style={{ opacity: 0.7 }}>{detail || "Coba muat ulang."}</div>
+    </div>
+  );
 }
 
+function NotFound() {
+  return <ErrorPage title="404" detail="Halaman tidak ditemukan." />;
+}
+
+/* =======================
+ *  Auth Guards
+ * ======================= */
 function RequireAuth({ children }) {
-  const { loading, user } = useAuth()
-  if (loading) return <Loading />
-  if (!user)   return <Navigate to="/auth" replace />
-  return children
+  const { loading, user } = useAuth();
+  if (loading) return <Loading />;
+  if (!user) return <Navigate to="/auth" replace />;
+  return children;
 }
 
-function RequireRole({ allow }) {
-  const { loading, role } = useAuth()
-  if (loading) return <Loading />
+function RequireRole({ allow, children }) {
+  const { loading, role } = useAuth();
+  if (loading) return <Loading />;
+
+  // Tidak punya role yang diizinkan → redirect ke halaman sesuai role
   if (!allow.includes(role)) {
-    // Kalau bukan admin, lempar ke /user
-    return <Navigate to="/user" replace />
+    const redirect = role === "admin" ? "/admin" : "/user";
+    return <Navigate to={redirect} replace />;
   }
-  return null
+  return children;
 }
 
+/* =======================
+ *  Redirect Root
+ * ======================= */
+function HomeRedirect() {
+  const { loading, user, role } = useAuth();
+  if (loading) return <Loading />;
+  if (!user) return <Navigate to="/auth" replace />;
+  return <Navigate to={role === "admin" ? "/admin" : "/user"} replace />;
+}
+
+/* =======================
+ *  Router Configuration
+ * ======================= */
 const router = createBrowserRouter([
   {
-    path: '/',
+    path: "/",
     element: <App />,
     errorElement: <ErrorPage />,
     children: [
+      // Root redirect
       { index: true, element: <HomeRedirect /> },
 
-      { path: 'auth', element:
-        <Suspense fallback={<Loading />}><Auth /></Suspense>
+      // Auth page
+      {
+        path: "auth",
+        element: (
+          <Suspense fallback={<Loading />}>
+            <Auth />
+          </Suspense>
+        ),
       },
 
-      { path: 'user', element:
-        <RequireAuth>
-          <Suspense fallback={<Loading />}><User /></Suspense>
-        </RequireAuth>
+      // User dashboard
+      {
+        path: "user",
+        element: (
+          <RequireAuth>
+            <RequireRole allow={["user"]}>
+              <Suspense fallback={<Loading />}>
+                <User />
+              </Suspense>
+            </RequireRole>
+          </RequireAuth>
+        ),
       },
 
-      { path: 'admin', element:
-        <RequireAuth>
-          <RequireRole allow={['admin']} />
-          <Suspense fallback={<Loading />}><Admin /></Suspense>
-        </RequireAuth>
+      // Admin dashboard
+      {
+        path: "admin",
+        element: (
+          <RequireAuth>
+            <RequireRole allow={["admin"]}>
+              <Suspense fallback={<Loading />}>
+                <Admin />
+              </Suspense>
+            </RequireRole>
+          </RequireAuth>
+        ),
       },
 
-      { path: '*', element: <NotFound /> },
+      // Fallback
+      { path: "*", element: <NotFound /> },
     ],
   },
-])
+]);
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+/* =======================
+ *  Mount React App
+ * ======================= */
+ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <Suspense fallback={<Loading />}>
       <RouterProvider router={router} />
     </Suspense>
   </React.StrictMode>
-)
+);

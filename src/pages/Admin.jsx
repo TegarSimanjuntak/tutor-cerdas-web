@@ -1,6 +1,28 @@
 import { useEffect, useMemo, useState, useMemo as useM } from "react";
+import { supabase } from "../lib/supabase";
 
 const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+async function apiFetch(path, options = {}) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      "Content-Type": "application/json",
+      Authorization: token ? `Bearer ${token}` : "",
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`[${res.status}] ${text}`);
+  }
+
+  return res.json().catch(() => null);
+}
+
 if (!API_BASE) console.warn("[Admin] VITE_API_URL belum di-set");
 
 /* ====== Styles (inject) ====== */
